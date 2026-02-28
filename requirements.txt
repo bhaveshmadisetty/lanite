@@ -1,0 +1,22 @@
+# Lanite Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Speech Recognition
+faster-whisper>=0.10.0
+
+# Audio Capture
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# User Input
+keyboard>=0.13.5
+pyperclip>=1.8.2
+
+# Optional: Audio file support for diagnostics
+# soundfile>=0.12.1
+
+# Development dependencies (not required for end users)
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.0.0
