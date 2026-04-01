@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/lanite_icon.png" alt="Lanite Logo" width="128" height="128">
+  <img src="lanite_icon.png" alt="Lanite Logo" width="128" height="128">
 </p>
 
 <h1 align="center">Lanite</h1>
