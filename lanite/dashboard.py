@@ -1,4 +1,4 @@
-# dashboard.py — Web-based UI bridge for Lanite
+# dashboard.py — Web-based UI bridge for Lanite 
 import json
 import logging
 import os
@@ -65,6 +65,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 
             self.wfile.write(html_content.encode('utf-8'))
             return
+
+        if self.path == '/lanite_icon.png':
+            img_path = HTML_PATH.parent / 'lanite_icon.png'
+            if img_path.exists():
+                self.send_response(200)
+                self.send_header('Content-type', 'image/png')
+                self.end_headers()
+                self.wfile.write(img_path.read_bytes())
+                return
 
         if self.path == '/api/state':
             self.send_response(200)
