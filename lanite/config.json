@@ -1,0 +1,9 @@
+{
+  "model": "small.en",
+  "language": "en",
+  "remove_fillers": false,
+  "startup_with_windows": false,
+  "trailing_space": true,
+  "first_run": true,
+  "compute_type": "int8"
+}

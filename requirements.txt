@@ -1,0 +1,18 @@
+# Lanite Requirements
+# Install: pip install -r requirements.txt
+#
+# Lower bounds reflect the oldest versions we've validated Lanite against.
+# Upper bounds are deliberately loose so fresh installs on newer Python
+# releases (3.11 / 3.12) pick up compatible wheels.
+
+faster-whisper>=1.0.0
+torch>=2.2.0
+torchaudio>=2.2.0
+sounddevice>=0.4.6
+numpy>=1.24.0,<2.0.0     # faster-whisper / ctranslate2 still require numpy 1.x
+pynput>=1.7.6
+pystray>=0.19.5
+Pillow>=10.0.0
+pyperclip>=1.8.2
+pyautogui>=0.9.54
+pywin32>=306

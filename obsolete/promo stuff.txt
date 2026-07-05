@@ -1,0 +1,48 @@
+🎙 LANITE — PROMOTIONAL HIGHLIGHTS & FUNCTIONALITY
+
+Lanite is a premium, offline-first voice typing assistant for Windows that brings state-of-the-art AI transcription directly to any application you use.
+
+🚀 KEY FEATURES
+
+• 100% Offline & Private: 
+  All transcription happens locally on your machine using advanced Whisper models. Your voice data never hits the cloud, ensuring total privacy and security.
+
+• Global Voice Injection: 
+  Type with your voice into ANY app (Notepad, VS Code, Discord, Email, more). Lanite injects text directly at your cursor.
+
+• Seamless 'Hold-to-Talk' Control: 
+  Triggered via a global Ctrl + Win hotkey. Hold to speak, release to type. It's friction-free and stays out of your way until you need it.
+
+• Intelligent VAD (Voice Activity Detection): 
+  Powered by Silero VAD to ensure it only captures your actual speech, filtering out silence and background noise automatically.
+
+• Filler Word Removal: 
+  Automatically strips out 'um', 'uh', and other verbal fillers to give you clean, professional text every time.
+
+• Premium Bento-Style Dashboard: 
+  A modern, high-end UI to manage your dictation history, view performance stats, and customize your experience.
+
+• Scalable AI Models: 
+  Choose your balance of speed vs. accuracy.
+  - Tiny: Lightning fast for quick notes.
+  - Small: The perfect daily driver.
+  - Medium: High-precision for complex dictation.
+
+• Visual Waveform Overlay: 
+  A sleek, real-time waveform appears when you speak, giving you immediate visual feedback that Lanite is hearing you.
+
+• Dictation History & Stats: 
+  Track your productivity. See which apps you use most for voice typing, your total word count, and average transcription speeds.
+
+• System Tray Integration: 
+  Runs silently in the background. Access settings or show the dashboard with a single click from the tray.
+
+🛠 TECHNICAL SPECS
+
+- Optimized for CPU (Fast performance even without a dedicated GPU).
+- Uses CTranslate2 for ultra-fast Whisper inference.
+- Minimal RAM footprint in standby mode.
+- Fully compatible with Windows 10 & 11.
+
+---
+Lanite: Speak. Typed. Done.
