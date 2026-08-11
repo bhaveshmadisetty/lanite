@@ -41,4 +41,9 @@ Desktop.ini
 # ── Obsolete folder ignore ───────────────────────────────────────────────────
 obsolete/
 
+# ── Screen recordings / captures ─────────────────────────────────────────────
+# Large binaries stay out of git history — once committed they can't be
+# removed without rewriting history.
+*.mp4
+
 
