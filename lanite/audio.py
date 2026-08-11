@@ -16,6 +16,16 @@ CHUNK_SIZE = 1024
 # Minimum RMS considered "real" audio signal (not just noise floor)
 _SIGNAL_THRESHOLD = 0.0005
 
+# ── Waveform auto-gain (visualiser only; never affects transcription) ─────────
+# Lowest loudness ceiling we'll normalise against. Prevents a silent room from
+# being amplified until the noise floor fills the bars.
+_AGC_FLOOR = 0.006
+# Per-frame decay of the rolling peak (~30fps) — slow release so bars don't
+# pump between syllables.
+_AGC_DECAY = 0.995
+# Below this RMS we report a flat line instead of scaled-up hiss.
+_AGC_NOISE_GATE = 0.0015
+
 
 def list_input_devices() -> list:
     """Return list of (index, name) for all input-capable devices."""
@@ -107,6 +117,9 @@ class AudioRecorder:
         self._lock = threading.Lock()
         self._device_index = device_index  # None = system default
         self._device_name  = "System Default"
+        # Rolling loudness ceiling for the waveform's auto-gain (see
+        # get_amplitude). Starts at the quiet floor and adapts to the mic.
+        self._agc_peak = _AGC_FLOOR
         self._valid = self._check_mic()
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -138,6 +151,10 @@ class AudioRecorder:
         try:
             with self._lock:
                 self._chunks = []
+            # Fresh gain window per recording, and drop stale levels so the
+            # first frames don't animate from the previous session's tail.
+            self._amplitude_buf.clear()
+            self._agc_peak = _AGC_FLOOR
             self._recording = True
 
             # Determine actual sample rate to use for this device
@@ -200,12 +217,42 @@ class AudioRecorder:
         return audio
 
     def get_amplitude(self) -> float:
-        """Return current RMS amplitude scaled 0→1 for the waveform animation."""
+        """
+        Return current mic level scaled 0→1 for the waveform animation.
+
+        This used to be a fixed `rms * 18.0`, which assumed a hot signal.
+        A quiet mic (measured RMS ~0.0086 here) only ever reached ~0.15, so
+        the bars barely moved. Instead we normalise against a rolling peak:
+        the loudest recent moment maps near the top of the range whatever the
+        input gain, so the visualiser responds on quiet and loud mics alike.
+
+        The peak rises instantly (so a sudden loud word doesn't clip) and
+        decays slowly (so bars don't pump between syllables). It never falls
+        below _AGC_FLOOR, which keeps silence looking like silence rather
+        than amplifying the noise floor to full height.
+        """
         if not self._amplitude_buf:
             return 0.0
-        recent = list(self._amplitude_buf)[-6:]
-        avg = float(np.mean(recent)) if recent else 0.0
-        return min(1.0, avg * 18.0)
+
+        recent = list(self._amplitude_buf)[-4:]
+        level = float(np.mean(recent)) if recent else 0.0
+
+        # Track the recent loudness ceiling: attack fast, release slow.
+        if level > self._agc_peak:
+            self._agc_peak = level
+        else:
+            self._agc_peak = max(
+                _AGC_FLOOR, self._agc_peak * _AGC_DECAY
+            )
+
+        # Below the noise floor, report silence outright.
+        if level < _AGC_NOISE_GATE:
+            return 0.0
+
+        norm = level / self._agc_peak if self._agc_peak > 0 else 0.0
+        # Gentle curve: gives small sounds visible movement without letting
+        # loud ones saturate every bar flat against the ceiling.
+        return float(min(1.0, norm ** 0.7))
 
     # ── Internal ──────────────────────────────────────────────────────────────
     def _callback(self, indata: np.ndarray, frames: int, time_info, status):
@@ -270,12 +317,60 @@ class VADProcessor:
         self._utils = None
 
     def load(self):
-        """Download/load silero-VAD (cached in models/torch_hub/)."""
+        """
+        Load silero-VAD from the local cache in models/torch_hub/.
+
+        We deliberately avoid `torch.hub.load(repo_or_dir="snakers4/silero-vad")`.
+        Even with force_reload=False, that form contacts GitHub to resolve the
+        branch ref before touching the cache — which cost ~27s on every startup
+        and broke the offline guarantee (it hangs even longer with no network).
+
+        Order of preference:
+          1. torch.jit.load() straight off the .jit file  — no hub machinery
+          2. torch.hub.load(source="local")               — local repo dir
+          3. Remote hub fetch                             — first run only
+        """
         import os, torch
+
         hub_dir = os.path.join(self._app_dir, "models", "torch_hub")
         os.makedirs(hub_dir, exist_ok=True)
         torch.hub.set_dir(hub_dir)
+
+        local_repo = os.path.join(hub_dir, "snakers4_silero-vad_master")
+        jit_path = os.path.join(
+            local_repo, "src", "silero_vad", "data", "silero_vad.jit"
+        )
+
+        # ── 1. Fastest path: load the TorchScript model directly ──────────
+        if os.path.isfile(jit_path):
+            try:
+                model = torch.jit.load(jit_path, map_location="cpu")
+                model.eval()
+                self._model = model
+                self._utils = self._local_utils(local_repo)
+                logging.info("silero-VAD loaded from local .jit (offline)")
+                return
+            except Exception as e:
+                logging.warning(f"Direct .jit load failed ({e}) — trying local hub")
+
+        # ── 2. Local hub repo (still fully offline) ───────────────────────
+        if os.path.isdir(local_repo):
+            try:
+                self._model, self._utils = torch.hub.load(
+                    repo_or_dir=local_repo,
+                    model="silero_vad",
+                    source="local",
+                    onnx=False,
+                    verbose=False,
+                )
+                logging.info("silero-VAD loaded from local hub cache (offline)")
+                return
+            except Exception as e:
+                logging.warning(f"Local hub load failed ({e}) — falling back to remote")
+
+        # ── 3. Remote fetch — first run only, requires network ────────────
         try:
+            logging.info("silero-VAD not cached locally — fetching from GitHub…")
             self._model, self._utils = torch.hub.load(
                 repo_or_dir="snakers4/silero-vad",
                 model="silero_vad",
@@ -283,10 +378,37 @@ class VADProcessor:
                 onnx=False,
                 verbose=False,
             )
-            logging.info("silero-VAD loaded")
+            logging.info("silero-VAD loaded (remote)")
         except Exception as e:
             logging.error(f"silero-VAD load failed: {e}")
             self._model = None
+
+    @staticmethod
+    def _local_utils(local_repo: str):
+        """
+        Import silero's utils_vad helpers from the cached repo without going
+        through torch.hub. Returns the same 5-tuple hubconf.py builds, so
+        process() can keep using self._utils[0] (get_speech_timestamps).
+        """
+        import os, sys
+
+        src = os.path.join(local_repo, "src")
+        if src not in sys.path:
+            sys.path.insert(0, src)
+        from silero_vad.utils_vad import (
+            get_speech_timestamps,
+            save_audio,
+            read_audio,
+            VADIterator,
+            collect_chunks,
+        )
+        return (
+            get_speech_timestamps,
+            save_audio,
+            read_audio,
+            VADIterator,
+            collect_chunks,
+        )
 
     def process(self, audio: np.ndarray) -> Optional[np.ndarray]:
         """

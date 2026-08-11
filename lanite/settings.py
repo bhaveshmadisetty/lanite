@@ -31,6 +31,9 @@ DEFAULT_CONFIG = {
     "first_run": True,
     "compute_type": "int8",
     "preferred_device": None,
+    # Whisper decode width. 1 = greedy (~1.5x faster, fine for short
+    # dictation); raise to 5 for the slower, marginally more careful decode.
+    "beam_size": 1,
 }
 
 _config: dict = {}

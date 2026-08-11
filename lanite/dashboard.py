@@ -91,7 +91,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "language": cfg.get("language", "en"),
                     "model": cfg.get("model", "small.en")
                 },
-                "status": dashboard.current_status
+                "status": dashboard.current_status,
+                "model_state": dashboard.model_state,
             }
             self.wfile.write(json.dumps(state).encode('utf-8'))
             return
@@ -150,7 +151,13 @@ class Dashboard:
     ):
         self._on_force_stop = on_force_stop
         self._on_model_change = on_model_change
-        
+
+        # Live model-swap state, polled by the dashboard so the UI can show a
+        # real "loading" phase instead of claiming success the instant the
+        # card is clicked (a medium.en swap takes several seconds).
+        #   state: "idle" | "loading" | "ready" | "error"
+        self.model_state = {"state": "idle", "name": None}
+
         # Determine status text from root to match initial status
         self.current_status = {"text": "Ready · Ctrl+Win to speak", "color": None}
         self.port = 0
@@ -213,3 +220,12 @@ class Dashboard:
     def update_status(self, text: str, color: str = None):
         """Update the status text. Frontend will fetch this."""
         self.current_status = {"text": text, "color": color}
+
+    def set_model_state(self, state: str, name: str = None):
+        """
+        Publish model-swap progress for the dashboard to poll.
+
+        state: "loading" while the weights load, "ready" once usable,
+               "error" if the load failed, "idle" when nothing is happening.
+        """
+        self.model_state = {"state": state, "name": name}

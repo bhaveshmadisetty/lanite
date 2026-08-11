@@ -56,10 +56,21 @@ def get_active_app_name(hwnd: Optional[int] = None) -> str:
 
 
 def _focus_window(hwnd: int):
-    """Attempt to bring focus back to a specific window handle."""
+    """
+    Bring focus back to a specific window handle.
+
+    Polls GetForegroundWindow rather than sleeping blind — focus usually
+    settles in a few ms, and we only pay the full wait when it doesn't.
+    """
     try:
+        if _u32.GetForegroundWindow() == hwnd:
+            return  # Already focused — nothing to wait for
         _u32.SetForegroundWindow(hwnd)
-        time.sleep(0.05)
+        deadline = time.perf_counter() + 0.12
+        while time.perf_counter() < deadline:
+            if _u32.GetForegroundWindow() == hwnd:
+                return
+            time.sleep(0.005)
     except Exception:
         pass
 
@@ -80,18 +91,55 @@ def _safe_clipboard_read() -> str:
 
 
 def _safe_clipboard_write(text: str, max_retries: int = 3) -> bool:
-    """Safely write to clipboard with retries."""
+    """
+    Safely write to clipboard with retries.
+
+    Polls for the write to land instead of sleeping a flat 50ms: the clipboard
+    is usually ready within a few ms, so this returns as soon as it verifies
+    rather than always paying worst-case latency.
+    """
     for attempt in range(max_retries):
         try:
             pyperclip.copy(text)
-            time.sleep(0.05)  # Let clipboard settle
-            # Verify the write succeeded
-            if pyperclip.paste() == text:
-                return True
+            deadline = time.perf_counter() + 0.15
+            while time.perf_counter() < deadline:
+                if pyperclip.paste() == text:
+                    return True
+                time.sleep(0.005)
         except Exception as e:
             logging.debug(f"Clipboard write attempt {attempt + 1} failed: {e}")
-            time.sleep(0.05)
+            time.sleep(0.02)
     return False
+
+
+_VK_CONTROL = 0x11
+_VK_LWIN    = 0x5B
+_VK_RWIN    = 0x5C
+
+
+def _key_is_down(vk: int) -> bool:
+    """True if the given virtual key is physically held down right now."""
+    try:
+        return bool(_u32.GetAsyncKeyState(vk) & 0x8000)
+    except Exception:
+        return False
+
+
+def _wait_for_modifiers_released(timeout: float = 1.0):
+    """
+    Block until Ctrl and Win are released (or *timeout* elapses).
+
+    Transcription usually finishes after the user has let go, so this
+    normally returns immediately.
+    """
+    deadline = time.perf_counter() + timeout
+    while time.perf_counter() < deadline:
+        if not (_key_is_down(_VK_CONTROL)
+                or _key_is_down(_VK_LWIN)
+                or _key_is_down(_VK_RWIN)):
+            return
+        time.sleep(0.01)
+    logging.debug("Modifiers still held after timeout — pasting anyway")
 
 
 def inject_text(text: str, target_hwnd: Optional[int] = None):
@@ -114,18 +162,23 @@ def inject_text(text: str, target_hwnd: Optional[int] = None):
             logging.error("Failed to write text to clipboard after retries")
             return
 
-        # Re-focus target window before pasting
+        # Re-focus target window before pasting (polls internally)
         if target_hwnd:
             _focus_window(target_hwnd)
 
-        # Small delay to ensure focus has settled
-        time.sleep(0.05)
+        # Wait for the user to actually let go of the activation hotkey.
+        # Synthesising Ctrl+V while Ctrl and Win are still physically down can
+        # be delivered as Ctrl+Win+V (a Windows shortcut) or swallowed
+        # entirely, so the paste lands in the wrong place or not at all.
+        _wait_for_modifiers_released()
 
         # Send Ctrl+V to paste
         pyautogui.hotkey("ctrl", "v")
 
-        # Wait for paste to complete
-        time.sleep(0.1)
+        # Brief settle so the paste is consumed before we restore the
+        # clipboard below. Trimmed from 100ms — the restore is already
+        # deferred on its own thread.
+        time.sleep(0.03)
 
         logging.info(f"Injected: '{text[:60].strip()}' ({len(text.split())} words)")
 
